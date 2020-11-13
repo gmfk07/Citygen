@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -9,6 +9,6 @@ public class Road : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        transform.localScale = new Vector3(1, 1, roadLength);
+        transform.localScale = new Vector3(0.01f, 0.01f, roadLength);
     }
 }
