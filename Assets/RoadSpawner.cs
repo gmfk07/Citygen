@@ -15,29 +15,48 @@ public class RoadSpawner : MonoBehaviour
     public static float NORMAL_BRANCH_POPULATION_THRESHOLD = 0.1f;
     public static float HIGHWAY_BRANCH_PROBABILITY = 0.02f;
     public static float DEFAULT_BRANCH_PROBABILITY = 0.4f;
+    public static int NORMAL_BRANCH_TIME_DELAY_FROM_HIGHWAY = 10;
     public static float HIGHWAY_SEGMENT_LENGTH = 400;
-    public static int SEGMENT_COUNT_LIMIT = 2;
+    public static float DEFAULT_SEGMENT_LENGTH = 300;
+    public static int SEGMENT_COUNT_LIMIT = 3;
 
-    public static float RandomNearCubic(float endpoint)
+    // Taken from https://answers.unity.com/questions/421968/normal-distribution-random.html.
+    public static float RandomGaussian(float minValue = 0.0f, float maxValue = 1.0f)
     {
-        float d = Mathf.Pow(Mathf.Abs(endpoint), 3);
-        float c = 0;
-        System.Random random = new System.Random();
-        while (c == 0 || random.NextDouble() < Mathf.Pow(Mathf.Abs(c), 3) / d)
+        float u, v, S;
+
+        do
         {
-            c = (float) (random.NextDouble() * (2 * endpoint) + endpoint);
+            u = 2.0f * UnityEngine.Random.value - 1.0f;
+            v = 2.0f * UnityEngine.Random.value - 1.0f;
+            S = u * u + v * v;
         }
-        return c;
+        while (S >= 1.0f);
+
+        // Standard Normal Distribution
+        float std = u * Mathf.Sqrt(-2.0f * Mathf.Log(S) / S);
+
+        // Normal Distribution centered between the min and max value
+        // and clamped following the "three-sigma rule"
+        float mean = (minValue + maxValue) / 2.0f;
+        float sigma = (maxValue - mean) / 3.0f;
+        return Mathf.Clamp(std * sigma + mean, minValue, maxValue);
+    }
+
+    public static float RandomNear(float center)
+    {
+        return RandomGaussian(center - center / 3, center + center / 3);
+        // TODO: fix this random number gen to make it actually make sense
     }
 
     public static float RandomStraightAngle()
     {
-        return RandomNearCubic(STRAIGHT_ANGLE);
+        return RandomNear(STRAIGHT_ANGLE);
     }
 
     public static float RandomBranchAngleDeviation()
     {
-        return RandomNearCubic(BRANCH_ANGLE_DEVIATION_FROM_90);
+        return RandomNear(BRANCH_ANGLE_DEVIATION_FROM_90);
     }
 
     public class Segment
@@ -80,7 +99,7 @@ public class RoadSpawner : MonoBehaviour
             }
         }
 
-        public void split(Vector3 point, Segment segment, List<Segment> segmentList)
+        public void split(Vector3 point, Segment segment, ref List<Segment> segmentList)
         {
             // Split this segment into two parts:
             // one that goes from point to end
@@ -132,8 +151,8 @@ public class RoadSpawner : MonoBehaviour
             Vector3 dir,
             float length,
             int t,
-            bool isHighway,
-            bool isSevered)
+            bool isHighway = false,
+            bool isSevered = false)
         {
             return new Segment(start, new Vector3(
                 (start.x + length * dir.x),
@@ -198,6 +217,12 @@ public class RoadSpawner : MonoBehaviour
 
     public static bool pointWithinSegment(Segment segment, Vector3 point)
     {
+        // Manually exclude the endpoints of the segment.
+        // TODO: this isn't very elegant.
+        if (point == segment.start || point == segment.end)
+        {
+            return false;
+        }
         float distance = (point - segment.start).magnitude;
         if (distance < segment.length() && (segment.start +
             distance * (segment.end - segment.start).normalized ==
@@ -208,7 +233,7 @@ public class RoadSpawner : MonoBehaviour
         return false;
     }
 
-    bool localConstraints(Segment segment, List<Segment> segments)
+    bool localConstraints(Segment segment, ref List<Segment> segments)
     {
         Debug.Log("local constraints");
         // Intersection check.
@@ -225,11 +250,7 @@ public class RoadSpawner : MonoBehaviour
             float distance = (intersection - segment.start).magnitude;
             if (pointWithinSegment(segment, intersection))
             {
-                if (!(Mathf.Abs(Vector3.Angle(segment.dir(), other.dir())) <
-                        MINIMUM_INTERSECTION_DEVIATION))
-                {
-                    minDistance = Mathf.Min(minDistance, distance);
-                }
+                minDistance = Mathf.Min(minDistance, distance);
             }
         }
         // Find the segment with the minimum distance and do a split.
@@ -243,16 +264,18 @@ public class RoadSpawner : MonoBehaviour
             float distance = (intersection - segment.start).magnitude;
             if (pointWithinSegment(segment, intersection))
             {
-                if (!(Mathf.Abs(Vector3.Angle(segment.dir(), other.dir())) <
-                        MINIMUM_INTERSECTION_DEVIATION))
+                if (distance == minDistance)
                 {
-                    if (distance == minDistance)
+                    if (Mathf.Abs(Vector3.Angle(segment.dir(), other.dir())) <
+                        MINIMUM_INTERSECTION_DEVIATION)
                     {
-                        other.split(intersection, segment, segments);
-                        segment.end = intersection;
-                        segment.isSevered = true;
-                        return true;
+                        return false;
                     }
+                    Debug.Log("found intersection at " + intersection);
+                    other.split(intersection, segment, ref segments);
+                    segment.end = intersection;
+                    segment.isSevered = true;
+                    return true;
                 }
             }
             // Crossing within radius check.
@@ -261,6 +284,16 @@ public class RoadSpawner : MonoBehaviour
                 Vector3 point = other.end;
                 segment.end = point;
                 segment.isSevered = true;
+                foreach (Segment seg in other.links[1])
+                {
+                    if ((seg.start == segment.start && seg.end == segment.end) ||
+                        (seg.start == segment.end && seg.end == segment.start))
+                    {
+                        return false;
+                    }
+                }
+
+                Debug.Log("crossing within radius");
                 foreach (Segment seg in other.links[1])
                 {
                     List<Segment> containing = seg.linksForEndContaining(other);
@@ -275,18 +308,21 @@ public class RoadSpawner : MonoBehaviour
             Vector3 closestPoint = closestPointOnSegment(segment.end, other);
             if (closestPoint.magnitude < ROAD_SNAP_DISTANCE)
             {
+
+                Debug.Log("road snap distance");
                 segment.end = closestPoint;
                 segment.isSevered = true;
                 // if intersecting lines are too closely aligned don't continue
-                if (!(Vector3.Angle(other.dir(), segment.dir()) <
-                    MINIMUM_INTERSECTION_DEVIATION))
+                if (Vector3.Angle(other.dir(), segment.dir()) <
+                    MINIMUM_INTERSECTION_DEVIATION)
                 {
-                    other.split(closestPoint, segment, segments);
-                    return true; 
+                    return false;
                 }
+                other.split(closestPoint, segment, ref segments);
+                return true; 
             }
         }
-        return false;
+        return true;
     }
 
     List<Segment> globalGoals(Segment previousSegment)
@@ -331,9 +367,9 @@ public class RoadSpawner : MonoBehaviour
                         newBranches.Add(Segment.usingDirection(
                         previousSegment.end,
                         Quaternion.AngleAxis(-90 + RandomBranchAngleDeviation(), Vector3.up) * previousSegment.dir(),
-                        previousSegment.length(), 0,
-                        previousSegment.isHighway,
-                        previousSegment.isSevered));
+                        DEFAULT_SEGMENT_LENGTH,
+                        previousSegment.isHighway ?
+                            NORMAL_BRANCH_TIME_DELAY_FROM_HIGHWAY : 0));
                     }
                     else
                     {
@@ -342,9 +378,9 @@ public class RoadSpawner : MonoBehaviour
                             newBranches.Add(Segment.usingDirection(
                                 previousSegment.end,
                                 Quaternion.AngleAxis(90 + RandomBranchAngleDeviation(), Vector3.up) * previousSegment.dir(),
-                                previousSegment.length(), 0,
-                                previousSegment.isHighway,
-                                previousSegment.isSevered));
+                                DEFAULT_SEGMENT_LENGTH,
+                                previousSegment.isHighway ?
+                                    NORMAL_BRANCH_TIME_DELAY_FROM_HIGHWAY : 0));
                         }
                     }
                 }
@@ -360,9 +396,9 @@ public class RoadSpawner : MonoBehaviour
                     newBranches.Add(Segment.usingDirection(
                         previousSegment.end,
                         Quaternion.AngleAxis(-90 + RandomBranchAngleDeviation(), Vector3.up) * previousSegment.dir(),
-                        previousSegment.length(), 0,
-                        previousSegment.isHighway,
-                        previousSegment.isSevered));
+                        DEFAULT_SEGMENT_LENGTH,
+                        previousSegment.isHighway ?
+                                    NORMAL_BRANCH_TIME_DELAY_FROM_HIGHWAY : 0));
                 }
                 else
                 {
@@ -371,9 +407,9 @@ public class RoadSpawner : MonoBehaviour
                         newBranches.Add(Segment.usingDirection(
                                 previousSegment.end,
                                 Quaternion.AngleAxis(90 + RandomBranchAngleDeviation(), Vector3.up) * previousSegment.dir(),
-                                previousSegment.length(), 0,
-                                previousSegment.isHighway,
-                                previousSegment.isSevered));
+                                DEFAULT_SEGMENT_LENGTH,
+                                previousSegment.isHighway ?
+                                    NORMAL_BRANCH_TIME_DELAY_FROM_HIGHWAY : 0));
                     }
                 }
             }
@@ -390,6 +426,11 @@ public class RoadSpawner : MonoBehaviour
                 previousSegment.links[1].Add(branch);
                 branch.links[0].Add(previousSegment);
             };
+        }
+        Debug.Log("generated new branches = ");
+        foreach (Segment branch in newBranches)
+        {
+            Debug.Log(branch.start + " " + branch.end);
         }
         return newBranches;
     }
@@ -444,21 +485,32 @@ public class RoadSpawner : MonoBehaviour
         return new List<Segment>() { rootSegment, oppositeDirection };
     }
 
-    void generationStep(PriorityQueue<Segment> pq, List<Segment> segments)
+    void generationStep(ref PriorityQueue<Segment> pq, ref List<Segment> segments)
     {
+        Debug.Log("call generationStep");
         Segment minSegment = pq.dequeue();
-        bool accepted = localConstraints(minSegment, segments);
+        Debug.Log("minSegment = " + minSegment.start + " " + minSegment.end);
+        bool accepted = localConstraints(minSegment, ref segments);
+        Debug.Log("minSegment after localConstraints = " + minSegment.start + " " + minSegment.end);
+        Debug.Log("accepted? = " + accepted);
         if (accepted)
         {
             minSegment.setupBranchLinks();
+            Debug.Log("minSegment after setupBranchLinks = " + minSegment.start + " " + minSegment.end);
+            segments.Add(minSegment);
+
+            Debug.Log("segments after addition of minSegment =");
+            foreach (Segment s in segments)
+            {
+                Debug.Log(s.start + " " + s.end);
+            }
+            foreach (Segment newSegment in globalGoals(minSegment))
+            {
+                newSegment.t = minSegment.t + 1 + newSegment.t;
+                pq.enqueue(newSegment);
+            }
         }
-        segments.Add(minSegment);
-        foreach (Segment newSegment in globalGoals(minSegment))
-        {
-            newSegment.t = minSegment.t + 1 + newSegment.t;
-            pq.enqueue(newSegment);
-        }
-    }
+}
 
     // Start is called before the first frame update
     void Start()
@@ -472,34 +524,36 @@ public class RoadSpawner : MonoBehaviour
         foreach (Segment initialSegment in makeInitialSegments())
         {
             pq.enqueue(initialSegment);
-            segments.Add(initialSegment);
         }
 
-        Debug.Log("added initial segments to pq and segments");
+        Debug.Log("added initial segments to pq");
 
         while (!pq.isEmpty() && segments.Count < SEGMENT_COUNT_LIMIT)
         {
-            generationStep(pq, segments);
+            generationStep(ref pq, ref segments);
             Debug.Log("new iteration of generation step, segments = ");
-            foreach(Segment s in segments)
+            foreach (Segment s in segments)
             {
                 Debug.Log(s.start + " " + s.end);
             }
         }
+
+        Debug.Log("segment generation done, segments =");
         foreach (Segment segment in segments)
         {
-            GameObject newObject = Instantiate(
+            Debug.Log(segment.start + " " + segment.end);
+
+            GameObject road = Instantiate(
                 RoadObject, Vector3.zero, Quaternion.identity);
-            newObject.transform.localScale = new Vector3(
+
+            road.transform.localScale = new Vector3(
                 0.1f, 0.1f, segment.length());
-            newObject.transform.Translate(
-                segment.start + new Vector3(0, 0, segment.length() / 2));
-            newObject.transform.RotateAround(segment.start, Vector3.left,
-                Vector3.Angle(Vector3.left, segment.dir()));
-            newObject.transform.RotateAround(segment.start, Vector3.forward,
-                Vector3.Angle(Vector3.forward, segment.dir()));
-            newObject.transform.RotateAround(segment.start, Vector3.up,
-                Vector3.Angle(Vector3.up, segment.dir()));
+
+            road.transform.rotation = Quaternion.FromToRotation(Vector3.forward, segment.end - segment.start);
+
+            road.transform.Translate((segment.start + segment.end) / 2);
+
         }
+        Debug.Break();
     }
 }
