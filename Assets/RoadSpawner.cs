@@ -13,12 +13,12 @@ public class RoadSpawner : MonoBehaviour
     public static float STRAIGHT_ANGLE = 15;
     public static float HIGHWAY_BRANCH_POPULATION_THRESHOLD = 0.1f;
     public static float NORMAL_BRANCH_POPULATION_THRESHOLD = 0.1f;
-    public static float HIGHWAY_BRANCH_PROBABILITY = 0.02f;
+    public static float HIGHWAY_BRANCH_PROBABILITY = 0.1f;
     public static float DEFAULT_BRANCH_PROBABILITY = 0.4f;
     public static int NORMAL_BRANCH_TIME_DELAY_FROM_HIGHWAY = 10;
     public static float HIGHWAY_SEGMENT_LENGTH = 400;
     public static float DEFAULT_SEGMENT_LENGTH = 300;
-    public static int SEGMENT_COUNT_LIMIT = 3;
+    public static int SEGMENT_COUNT_LIMIT = 50;
 
     // Taken from https://answers.unity.com/questions/421968/normal-distribution-random.html.
     public static float RandomGaussian(float minValue = 0.0f, float maxValue = 1.0f)
@@ -547,7 +547,7 @@ public class RoadSpawner : MonoBehaviour
                 RoadObject, Vector3.zero, Quaternion.identity);
 
             road.transform.localScale = new Vector3(
-                0.1f, 0.1f, segment.length());
+                1f, 1f, segment.length());
 
             road.transform.Translate((segment.start + segment.end) / 2);
             road.transform.rotation = Quaternion.LookRotation(segment.end - (segment.start + segment.end) / 2);
