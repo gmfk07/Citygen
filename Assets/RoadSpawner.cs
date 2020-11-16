@@ -549,10 +549,8 @@ public class RoadSpawner : MonoBehaviour
             road.transform.localScale = new Vector3(
                 0.1f, 0.1f, segment.length());
 
-            road.transform.rotation = Quaternion.LookRotation(segment.end);
-
             road.transform.Translate((segment.start + segment.end) / 2);
-
+            road.transform.rotation = Quaternion.LookRotation(segment.end - (segment.start + segment.end) / 2);
         }
         Debug.Break();
     }
