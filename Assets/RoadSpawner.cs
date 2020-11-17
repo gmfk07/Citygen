@@ -104,30 +104,33 @@ public class RoadSpawner : MonoBehaviour
         {
             // Split this segment into two parts:
             // one that goes from point to end
-            Segment splitPart = new Segment(point, end, t, isHighway);
+            Segment splitPart = new Segment(start, point, t, isHighway);
             segmentList.Add(splitPart);
             // and one that goes from start to point
-            this.end = point;
+            this.start = point;
+            // Make sure that "this" has the same endpoint, because it might
+            // still be in the Priority Queue.
+            // What's getting finalized is the 1st part (start -> point).
 
-            // The back links from the split part are "this" and
+            // The foward links from the split part are "this" and
             // the intersecting segment.
-            splitPart.links[0] = new List<Segment>() { this, segment };
-            // The forward links from the split part are unchanged.
-            splitPart.links[1] = this.links[1];
-            // The forward links from this part are the split part and
+            splitPart.links[1] = new List<Segment>() { this, segment };
+            // The backward links from the split part are unchanged.
+            splitPart.links[0] = new List<Segment>(this.links[0]);
+            // The backward links from this part are the split part and
             // intersecting segment.
-            this.links[1] = new List<Segment>() { segment, splitPart };
+            this.links[0] = new List<Segment>() { segment, splitPart };
 
             // Make 'this' and 'splitPart' be forward links of the
             // intersecting segment.
             segment.links[1].Add(this);
             segment.links[1].Add(splitPart);
 
-            // the end of splitPart used to be the end of this segment.
-            // go through all linked roads at splitPart's end, and replace their
-            // inverse references (this -> splitPart)
-            for (int i = 0; i < splitPart.links[1].Count; i++) {
-                Segment link = splitPart.links[1][i];
+            // the start of splitPart used to be the start of this segment.
+            // go through all linked roads at splitPart's start, and replace 
+            // their inverse references (this -> splitPart)
+            for (int i = 0; i < splitPart.links[0].Count; i++) {
+                Segment link = splitPart.links[0][i];
                 // Check the backwards links.
                 for (int j = 0; j < link.links[0].Count; j++)
                 {
@@ -202,17 +205,21 @@ public class RoadSpawner : MonoBehaviour
 
     public static Vector3 closestPointOnSegment(Vector3 point, Segment segment)
     {
+        Debug.Log("compute closest point on segment for segment " + segment.start + " " + segment.end + ", point = " + point);
         Vector3 segmentVector = segment.end - segment.start;
         Vector3 translatedPoint = point - segment.start;
         Vector3 projection = Vector3.Project(segmentVector, translatedPoint);
         if (pointWithinSegment(segment, point))
         {
+            Debug.Log("closest point is projection = " + projection);
             return projection;
         }
         if ((segment.start - point).magnitude < (segment.end - point).magnitude)
         {
+            Debug.Log("segment start is closer than segment end");
             return segment.start;
         }
+        Debug.Log("segment end is closer than segment start");
         return segment.end;
     }
 
@@ -320,7 +327,7 @@ public class RoadSpawner : MonoBehaviour
         {
                 // Intersection within radius check.
                 Vector3 closestPoint = closestPointOnSegment(segment.end, other);
-            if (closestPoint.magnitude < ROAD_SNAP_DISTANCE)
+            if ((segment.end - closestPoint).magnitude < ROAD_SNAP_DISTANCE)
             {
 
                 Debug.Log("road snap distance");
@@ -551,6 +558,15 @@ public class RoadSpawner : MonoBehaviour
             }
         }
 
+        if (pq.isEmpty()) {
+            Debug.Log("pq is empty");
+        }
+
+        if (segments.Count >= SEGMENT_COUNT_LIMIT)
+        {
+            Debug.Log("segment count reached, segments.Count = " + segments.Count);
+        }
+        
         Debug.Log("segment generation done, segments =");
         foreach (Segment segment in segments)
         {
