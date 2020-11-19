@@ -7,10 +7,11 @@ public class RoadSpawner : MonoBehaviour
 {
     public GameObject RoadObject;
     public static float MINIMUM_INTERSECTION_DEVIATION = 30;
+    public static float MINIMUM_ROAD_LENGTH = 100;
     public static float ROAD_SNAP_DISTANCE = 50;
     public static float HIGHWAY_POPULATION_SAMPLE_SIZE = 1;
     public static float BRANCH_ANGLE_DEVIATION_FROM_90 = 3;
-    public static float STRAIGHT_ANGLE_DEVIATION_FROM_0 = 15;
+    public static float STRAIGHT_ANGLE_DEVIATION_FROM_0 = 30;
     public static float HIGHWAY_BRANCH_POPULATION_THRESHOLD = 0.1f;
     public static float NORMAL_BRANCH_POPULATION_THRESHOLD = 0.01f;
     public static float HIGHWAY_BRANCH_PROBABILITY = 0.1f;
@@ -18,7 +19,7 @@ public class RoadSpawner : MonoBehaviour
     public static int NORMAL_BRANCH_TIME_DELAY_FROM_HIGHWAY = 10;
     public static float HIGHWAY_SEGMENT_LENGTH = 400;
     public static float DEFAULT_SEGMENT_LENGTH = 300;
-    public static int SEGMENT_COUNT_LIMIT = 50;
+    public static int SEGMENT_COUNT_LIMIT = 200;
 
     // Taken from https://answers.unity.com/questions/421968/normal-distribution-random.html.
     public static float RandomGaussian(float minValue = 0.0f, float maxValue = 1.0f)
@@ -205,21 +206,21 @@ public class RoadSpawner : MonoBehaviour
 
     public static Vector3 closestPointOnSegment(Vector3 point, Segment segment)
     {
-        Debug.Log("compute closest point on segment for segment " + segment.start + " " + segment.end + ", point = " + point);
+        //Debug.Log("compute closest point on segment for segment " + segment.start + " " + segment.end + ", point = " + point);
         Vector3 segmentVector = segment.end - segment.start;
         Vector3 translatedPoint = point - segment.start;
         Vector3 projection = Vector3.Project(segmentVector, translatedPoint);
         if (pointWithinSegment(segment, point))
         {
-            Debug.Log("closest point is projection = " + projection);
+            //Debug.Log("closest point is projection = " + projection);
             return projection;
         }
         if ((segment.start - point).magnitude < (segment.end - point).magnitude)
         {
-            Debug.Log("segment start is closer than segment end");
+            //Debug.Log("segment start is closer than segment end");
             return segment.start;
         }
-        Debug.Log("segment end is closer than segment start");
+        //Debug.Log("segment end is closer than segment start");
         return segment.end;
     }
 
@@ -261,6 +262,10 @@ public class RoadSpawner : MonoBehaviour
                 minDistance = Mathf.Min(minDistance, distance);
             }
         }
+        if (minDistance < MINIMUM_ROAD_LENGTH)
+        {
+            return false;
+        }
         // Find the segment with the minimum distance and do a split.
         foreach (Segment other in segments)
         {
@@ -274,6 +279,13 @@ public class RoadSpawner : MonoBehaviour
             {
                 if (distance == minDistance)
                 {
+                    if ((other.start - intersection).magnitude <
+                        MINIMUM_ROAD_LENGTH ||
+                        (other.end - intersection).magnitude <
+                        MINIMUM_ROAD_LENGTH)
+                    {
+                        return false;
+                    }
                     // Reject if the angle between roads is too small
                     if ((Mathf.Abs(Vector3.Angle(segment.dir(), other.dir())) <
                         MINIMUM_INTERSECTION_DEVIATION) ||
@@ -292,57 +304,89 @@ public class RoadSpawner : MonoBehaviour
                 }
             }
         }
-        
+
+        // Find minimum distance to another road end.
+        minDistance = float.PositiveInfinity;
         foreach (Segment other in segments)
         {
-            // Crossing within radius check.
-            if ((segment.end - other.end).magnitude <= ROAD_SNAP_DISTANCE)
+            minDistance = Mathf.Min(minDistance, (other.end - segment.end).magnitude);
+        }
+        if (minDistance <= ROAD_SNAP_DISTANCE)
+        {
+            foreach (Segment other in segments)
             {
-                Vector3 point = other.end;
-                segment.end = point;
-                segment.isSevered = true;
-                foreach (Segment seg in other.links[1])
+                // Crossing within radius check.
+                if ((segment.end - other.end).magnitude == minDistance)
                 {
-                    if ((seg.start == segment.start && seg.end == segment.end) ||
-                        (seg.start == segment.end && seg.end == segment.start))
+                    // If this road would become too short after snap, reject
+                    if ((other.end - segment.start).magnitude <
+                        MINIMUM_ROAD_LENGTH)
                     {
                         return false;
                     }
-                }
+                    if ((Mathf.Abs(Vector3.Angle(other.end - segment.start, other.dir())) <
+                            MINIMUM_INTERSECTION_DEVIATION) ||
+                            // Segments have direction but 'roads' don't, so
+                            // check the 180 degree rotation as well
+                            (Mathf.Abs(Vector3.Angle(segment.start - other.end, other.dir())) <
+                            MINIMUM_INTERSECTION_DEVIATION))
+                    {
+                        return false;
+                    }
+                    Debug.Log("modifying segment from " + segment.start + " " + segment.end + " " + segment.length());
+                    Vector3 point = other.end;
+                    segment.end = point;
+                    Debug.Log("to " + segment.start + " " + segment.end + " " + segment.length());
+                    segment.isSevered = true;
+                    foreach (Segment seg in other.links[1])
+                    {
+                        if ((seg.start == segment.start && seg.end == segment.end) ||
+                            (seg.start == segment.end && seg.end == segment.start))
+                        {
+                            return false;
+                        }
+                    }
 
-                Debug.Log("crossing within radius");
-                foreach (Segment seg in other.links[1])
-                {
-                    List<Segment> containing = seg.linksForEndContaining(other);
-                    containing.Add(segment);
-                    segment.links[1].Add(seg);
+                    foreach (Segment seg in other.links[1])
+                    {
+                        List<Segment> containing = seg.linksForEndContaining(other);
+                        containing.Add(segment);
+                        segment.links[1].Add(seg);
+                    }
+                    other.links[1].Add(segment);
+                    segment.links[1].Add(other);
+                    return true;
                 }
-                other.links[1].Add(segment);
-                segment.links[1].Add(other);
-                return true;
             }
         }
-
+        minDistance = float.PositiveInfinity;
         foreach (Segment other in segments)
         {
+            minDistance = Mathf.Min(minDistance, closestPointOnSegment(segment.end, other).magnitude);
+        }
+        if (minDistance <= ROAD_SNAP_DISTANCE)
+        {
+            foreach (Segment other in segments)
+            {
                 // Intersection within radius check.
                 Vector3 closestPoint = closestPointOnSegment(segment.end, other);
-            if ((segment.end - closestPoint).magnitude < ROAD_SNAP_DISTANCE)
-            {
-
-                Debug.Log("road snap distance");
-                segment.end = closestPoint;
-                segment.isSevered = true;
-                // if intersecting lines are too closely aligned don't continue
-                if ((Mathf.Abs(Vector3.Angle(segment.dir(), other.dir())) <
-                        MINIMUM_INTERSECTION_DEVIATION) ||
-                        (Mathf.Abs(Vector3.Angle(-segment.dir(), other.dir())) <
-                        MINIMUM_INTERSECTION_DEVIATION))
+                if ((segment.end - closestPoint).magnitude == minDistance)
                 {
-                    return false;
+
+                    Debug.Log("road snap distance");
+                    segment.end = closestPoint;
+                    segment.isSevered = true;
+                    // if intersecting lines are too closely aligned don't continue
+                    if ((Mathf.Abs(Vector3.Angle(segment.dir(), other.dir())) <
+                            MINIMUM_INTERSECTION_DEVIATION) ||
+                            (Mathf.Abs(Vector3.Angle(-segment.dir(), other.dir())) <
+                            MINIMUM_INTERSECTION_DEVIATION))
+                    {
+                        return false;
+                    }
+                    other.split(closestPoint, segment, ref segments);
+                    return true;
                 }
-                other.split(closestPoint, segment, ref segments);
-                return true; 
             }
         }
         return true;
@@ -456,7 +500,7 @@ public class RoadSpawner : MonoBehaviour
         Debug.Log("generated new branches = ");
         foreach (Segment branch in newBranches)
         {
-            Debug.Log(branch.start + " " + branch.end);
+            Debug.Log(branch.start + " " + branch.end + " " + branch.length());
         }
         return newBranches;
     }
@@ -509,21 +553,21 @@ public class RoadSpawner : MonoBehaviour
     {
         Debug.Log("call generationStep");
         Segment minSegment = pq.dequeue();
-        Debug.Log("minSegment = " + minSegment.start + " " + minSegment.end);
+        Debug.Log("minSegment = " + minSegment.start + " " + minSegment.end + " " + minSegment.length());
         bool accepted = localConstraints(minSegment, ref segments);
-        Debug.Log("minSegment after localConstraints = " + minSegment.start + " " + minSegment.end);
-        Debug.Log("accepted? = " + accepted);
+        Debug.Log("minSegment after localConstraints = " + minSegment.start + " " + minSegment.end + " " + minSegment.length());
+        //Debug.Log("accepted? = " + accepted);
         if (accepted)
         {
             minSegment.setupBranchLinks();
-            Debug.Log("minSegment after setupBranchLinks = " + minSegment.start + " " + minSegment.end);
+            //Debug.Log("minSegment after setupBranchLinks = " + minSegment.start + " " + minSegment.end);
             segments.Add(minSegment);
 
-            Debug.Log("segments after addition of minSegment =");
-            foreach (Segment s in segments)
-            {
-                Debug.Log(s.start + " " + s.end);
-            }
+            //Debug.Log("segments after addition of minSegment =");
+            //foreach (Segment s in segments)
+            //{
+            //    Debug.Log(s.start + " " + s.end);
+            //}
             foreach (Segment newSegment in globalGoals(minSegment))
             {
                 newSegment.t = minSegment.t + 1 + newSegment.t;
@@ -551,26 +595,21 @@ public class RoadSpawner : MonoBehaviour
         while (!pq.isEmpty() && segments.Count < SEGMENT_COUNT_LIMIT)
         {
             generationStep(ref pq, ref segments);
-            Debug.Log("new iteration of generation step, segments = ");
-            foreach (Segment s in segments)
-            {
-                Debug.Log(s.start + " " + s.end);
-            }
+            //Debug.Log("new iteration of generation step, segments = ");
+            //foreach (Segment s in segments)
+            //{
+            //    Debug.Log(s.start + " " + s.end + " " + s.length());
+            //}
         }
 
         if (pq.isEmpty()) {
             Debug.Log("pq is empty");
         }
-
-        if (segments.Count >= SEGMENT_COUNT_LIMIT)
-        {
-            Debug.Log("segment count reached, segments.Count = " + segments.Count);
-        }
-        
+               
         Debug.Log("segment generation done, segments =");
         foreach (Segment segment in segments)
         {
-                Debug.Log(segment.start + " " + segment.end);
+                Debug.Log(segment.start + " " + segment.end + " " + segment.length());
 
                 GameObject road = Instantiate(
                     RoadObject, Vector3.zero, Quaternion.identity);
@@ -580,6 +619,10 @@ public class RoadSpawner : MonoBehaviour
 
                 road.transform.Translate((segment.start + segment.end) / 2);
                 road.transform.rotation = Quaternion.LookRotation(segment.end - (segment.start + segment.end) / 2);
+        }
+        if (segments.Count >= SEGMENT_COUNT_LIMIT)
+        {
+            Debug.Log("segment count reached, segments.Count = " + segments.Count);
         }
         Debug.Break();
     }
