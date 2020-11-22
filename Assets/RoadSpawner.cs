@@ -580,6 +580,10 @@ public class RoadSpawner : MonoBehaviour
     void Start()
     {
         Debug.Log("start");
+
+        // Set a random seed for determinism in debugging etc.
+        UnityEngine.Random.InitState(42);
+
         PriorityQueue<Segment> pq = new PriorityQueue<Segment>(s => s.t);
         List<Segment> segments = new List<Segment>();
 
