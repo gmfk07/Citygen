@@ -582,7 +582,7 @@ public class RoadSpawner : MonoBehaviour
         Debug.Log("start");
 
         // Set a random seed for determinism in debugging etc.
-        UnityEngine.Random.InitState(42);
+        UnityEngine.Random.InitState(420);
 
         PriorityQueue<Segment> pq = new PriorityQueue<Segment>(s => s.t);
         List<Segment> segments = new List<Segment>();
@@ -623,6 +623,18 @@ public class RoadSpawner : MonoBehaviour
 
                 road.transform.Translate((segment.start + segment.end) / 2);
                 road.transform.rotation = Quaternion.LookRotation(segment.end - (segment.start + segment.end) / 2);
+
+                // Create a cube that represents a building.
+                GameObject cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                // Attempt to scoot the building off the road...
+                // TODO: choose a side of the road to scoot it onto?
+                // TODO: create buildings alongside both sides of the road?
+                var delta_ground = new Vector3(20.0f, 0.0f, 20.0f);
+                cube.transform.Translate(((segment.start + segment.end) / 2) + delta_ground);
+                // Size the building based on density?
+                float density = this.popOnRoad(segment);
+                float height = 1250.0f * density;
+                cube.transform.localScale = new Vector3(200.0f, height, 250.0f);
         }
         if (segments.Count >= SEGMENT_COUNT_LIMIT)
         {
