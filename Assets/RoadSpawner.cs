@@ -20,6 +20,7 @@ public class RoadSpawner : MonoBehaviour
     public static float HIGHWAY_SEGMENT_LENGTH = 400;
     public static float DEFAULT_SEGMENT_LENGTH = 300;
     public static int SEGMENT_COUNT_LIMIT = 200;
+    public static int ITERATION_COUNT = 50;
 
     // Taken from https://answers.unity.com/questions/421968/normal-distribution-random.html.
     public static float RandomGaussian(float minValue = 0.0f, float maxValue = 1.0f)
@@ -574,45 +575,44 @@ public class RoadSpawner : MonoBehaviour
                 pq.enqueue(newSegment);
             }
         }
-}
+    }
 
-    // Start is called before the first frame update
-    void Start()
+    List<List<Segment>> getRoadMaps()
     {
-        Debug.Log("start");
+        List<List<Segment>> roadMaps = new List<List<Segment>>();
 
-        // Set a random seed for determinism in debugging etc.
-        UnityEngine.Random.InitState(420);
-
-        PriorityQueue<Segment> pq = new PriorityQueue<Segment>(s => s.t);
-        List<Segment> segments = new List<Segment>();
-
-        Debug.Log("initialized pq and segments");
-
-        foreach (Segment initialSegment in makeInitialSegments())
+        for (int i = 0; i < ITERATION_COUNT; i++)
         {
-            pq.enqueue(initialSegment);
-        }
+            PriorityQueue<Segment> pq = new PriorityQueue<Segment>(s => s.t);
+            List<Segment> segments = new List<Segment>();
 
-        Debug.Log("added initial segments to pq");
+            Debug.Log("initialized pq and segments");
 
-        while (!pq.isEmpty() && segments.Count < SEGMENT_COUNT_LIMIT)
-        {
-            generationStep(ref pq, ref segments);
-            //Debug.Log("new iteration of generation step, segments = ");
-            //foreach (Segment s in segments)
-            //{
-            //    Debug.Log(s.start + " " + s.end + " " + s.length());
-            //}
-        }
+            foreach (Segment initialSegment in makeInitialSegments())
+            {
+                pq.enqueue(initialSegment);
+            }
 
-        if (pq.isEmpty()) {
-            Debug.Log("pq is empty");
-        }
-               
-        Debug.Log("segment generation done, segments =");
-        foreach (Segment segment in segments)
-        {
+            Debug.Log("added initial segments to pq");
+
+            while (!pq.isEmpty() && segments.Count < SEGMENT_COUNT_LIMIT)
+            {
+                generationStep(ref pq, ref segments);
+                //Debug.Log("new iteration of generation step, segments = ");
+                //foreach (Segment s in segments)
+                //{
+                //    Debug.Log(s.start + " " + s.end + " " + s.length());
+                //}
+            }
+
+            if (pq.isEmpty())
+            {
+                Debug.Log("pq is empty");
+            }
+
+            Debug.Log("segment generation done, segments =");
+            foreach (Segment segment in segments)
+            {
                 Debug.Log(segment.start + " " + segment.end + " " + segment.length());
 
                 GameObject road = Instantiate(
@@ -635,11 +635,82 @@ public class RoadSpawner : MonoBehaviour
                 float density = this.popOnRoad(segment);
                 float height = 1250.0f * density;
                 cube.transform.localScale = new Vector3(200.0f, height, 250.0f);
+            }
+            if (segments.Count >= SEGMENT_COUNT_LIMIT)
+            {
+                Debug.Log("segment count reached, segments.Count = " + segments.Count);
+            }
+            roadMaps.Add(segments);
         }
-        if (segments.Count >= SEGMENT_COUNT_LIMIT)
-        {
-            Debug.Log("segment count reached, segments.Count = " + segments.Count);
-        }
-        Debug.Break();
+        return roadMaps;
     }
+
+    float sumWeightedDistanceToRoads(float minX, float maxX, float minZ, float maxZ,
+            float sampleDistance, List<Segment> segments)
+    {
+        float total = 0.0f;
+        for (float x = minX; x < maxX; x += sampleDistance)
+        {
+            for (float z = minZ; z < maxZ; z += sampleDistance)
+            {
+                float minDist = float.MaxValue;
+                foreach (Segment segment in segments)
+                {
+                    Vector3 point = new Vector3(x, 0, z);
+                    Vector3 closestPoint = closestPointOnSegment(point, segment);
+                    float dist = (closestPoint - point).magnitude;
+                    if (dist < minDist)
+                    {
+                        minDist = dist;
+                    }
+                }
+                total += Mathf.PerlinNoise(x, z) * minDist;
+            }
+        }
+        return total;
+    }
+
+    float sumSegmentLength(List<Segment> segments)
+    {
+        float sumLength = 0.0f;
+        foreach (Segment segment in segments)
+        {
+            sumLength += segment.length();
+        }
+        return sumLength;
+    }
+
+    // Start is called before the first frame update
+    void Start()
+    {
+        Debug.Log("start");
+
+        // Set a random seed for determinism in debugging etc.
+        UnityEngine.Random.InitState(420);
+
+        List<List<Segment>> roadMaps = getRoadMaps();
+
+        List<Vector3> performanceSpacePoints = new List<Vector3>();
+
+        for (int roadMapIdx = 0; roadMapIdx < roadMaps.Count; roadMapIdx++)
+        {
+            // TODO: establish bounds
+            // We should probably use constants for min max bounds size or something?
+            //totalWeightedDistance = sumWeightedDistanceToRoads()
+            float totalRoadLength = sumSegmentLength(roadMaps[roadMapIdx]);
+
+            //performanceSpacePoints.Add(new Vector3(roadMapIdx, totalWeightedDistance, totalRoadLength));
+        }
+
+        //TODO: make method getParetoFront which takes in Vector3s
+        // First item is an index (ignore for the sake of pareto front)
+        // Other two items should be minimized
+        //List<Vector3> paretoFront = getParetoFront(performanceSpacePoints);
+
+        //TODO: pick some point from the pareto front or let people choose which one they want to see?
+        // Not sure how we would do that but ok.
+
+    }
+
+        
 }
