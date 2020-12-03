@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using System.Linq;
 
 public class RoadSpawner : MonoBehaviour
 {
@@ -21,6 +22,11 @@ public class RoadSpawner : MonoBehaviour
     public static float DEFAULT_SEGMENT_LENGTH = 300;
     public static int SEGMENT_COUNT_LIMIT = 200;
     public static int ITERATION_COUNT = 50;
+
+    private int currentlySelectedMap = 0;
+    private List<Vector3> paretoFront;
+    private List<GameObject> gameObjectList = new List<GameObject>();
+    private List<List<Segment>> roadMaps;
 
     // Taken from https://answers.unity.com/questions/421968/normal-distribution-random.html.
     public static float RandomGaussian(float minValue = 0.0f, float maxValue = 1.0f)
@@ -611,34 +617,10 @@ public class RoadSpawner : MonoBehaviour
             }
 
             Debug.Log("segment generation done, segments =");
-            foreach (Segment segment in segments)
-            {
-                Debug.Log(segment.start + " " + segment.end + " " + segment.length());
-
-                GameObject road = Instantiate(
-                    RoadObject, Vector3.zero, Quaternion.identity);
-
-                road.transform.localScale = new Vector3(
-                    segment.isHighway ? 20f : 10f, 0.1f, segment.length());
-
-                road.transform.Translate((segment.start + segment.end) / 2);
-                road.transform.rotation = Quaternion.LookRotation(segment.end - (segment.start + segment.end) / 2);
-
-                // Create a cube that represents a building.
-                GameObject cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                // Attempt to scoot the building off the road...
-                // TODO: choose a side of the road to scoot it onto?
-                // TODO: create buildings alongside both sides of the road?
-                var delta_ground = new Vector3(20.0f, 0.0f, 20.0f);
-                cube.transform.Translate(((segment.start + segment.end) / 2) + delta_ground);
-                // Size the building based on density?
-                float density = this.popOnRoad(segment);
-                float height = 1250.0f * density;
-                cube.transform.localScale = new Vector3(200.0f, height, 250.0f);
-            }
+            
             if (segments.Count >= SEGMENT_COUNT_LIMIT)
             {
-                Debug.Log("segment count reached, segments.Count = " + segments.Count);
+                Debug.Log("segment count limit reached, segments.Count = " + segments.Count);
             }
             roadMaps.Add(segments);
         }
@@ -680,6 +662,59 @@ public class RoadSpawner : MonoBehaviour
         return sumLength;
     }
 
+    // First item is an index (ignore for the sake of pareto front)
+    // Other two items should be minimized
+    List<Vector3> getParetoFront(List<Vector3> points)
+    {
+        List<Vector3> results = new List<Vector3>();
+        List<Vector3> ySorted = points.OrderBy(v => v.y).ToList();
+        results.Add(ySorted[0]);
+        float lowestZ = ySorted[0].z;
+
+        for (int i = 1; i < ySorted.Count; i++)
+        {
+            if (lowestZ > ySorted[i].z)
+            {
+                results.Add(ySorted[i]);
+                lowestZ = ySorted[i].z;
+            }
+        }
+
+        return results;
+    }
+
+    void RenderMap(List<Segment> roadMap)
+    {
+        foreach (Segment segment in roadMap)
+        {
+            Debug.Log(segment.start + " " + segment.end + " " + segment.length());
+
+            GameObject road = Instantiate(
+                RoadObject, Vector3.zero, Quaternion.identity);
+
+            gameObjectList.Add(road);
+
+            road.transform.localScale = new Vector3(
+                segment.isHighway ? 20f : 10f, 0.1f, segment.length());
+
+            road.transform.Translate((segment.start + segment.end) / 2);
+            road.transform.rotation = Quaternion.LookRotation(segment.end - (segment.start + segment.end) / 2);
+
+            // Create a cube that represents a building.
+            GameObject cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            gameObjectList.Add(cube);
+            // Attempt to scoot the building off the road...
+            // TODO: choose a side of the road to scoot it onto?
+            // TODO: create buildings alongside both sides of the road?
+            var delta_ground = new Vector3(20.0f, 0.0f, 20.0f);
+            cube.transform.Translate(((segment.start + segment.end) / 2) + delta_ground);
+            // Size the building based on density?
+            float density = this.popOnRoad(segment);
+            float height = 1250.0f * density;
+            cube.transform.localScale = new Vector3(200.0f, height, 250.0f);
+        }
+    }
+
     // Start is called before the first frame update
     void Start()
     {
@@ -688,7 +723,7 @@ public class RoadSpawner : MonoBehaviour
         // Set a random seed for determinism in debugging etc.
         UnityEngine.Random.InitState(420);
 
-        List<List<Segment>> roadMaps = getRoadMaps();
+        roadMaps = getRoadMaps();
 
         List<Vector3> performanceSpacePoints = new List<Vector3>();
 
@@ -696,21 +731,34 @@ public class RoadSpawner : MonoBehaviour
         {
             // TODO: establish bounds
             // We should probably use constants for min max bounds size or something?
-            //totalWeightedDistance = sumWeightedDistanceToRoads()
+            float totalWeightedDistance = sumWeightedDistanceToRoads(-10000, -10000, 10000, 10000, 1, roadMaps[roadMapIdx]);
             float totalRoadLength = sumSegmentLength(roadMaps[roadMapIdx]);
 
-            //performanceSpacePoints.Add(new Vector3(roadMapIdx, totalWeightedDistance, totalRoadLength));
+            performanceSpacePoints.Add(new Vector3(roadMapIdx, totalWeightedDistance, totalRoadLength));
         }
 
-        //TODO: make method getParetoFront which takes in Vector3s
-        // First item is an index (ignore for the sake of pareto front)
-        // Other two items should be minimized
-        //List<Vector3> paretoFront = getParetoFront(performanceSpacePoints);
+        paretoFront = getParetoFront(performanceSpacePoints);
 
-        //TODO: pick some point from the pareto front or let people choose which one they want to see?
-        // Not sure how we would do that but ok.
+        Debug.Log(roadMaps[(int)paretoFront[currentlySelectedMap].x].Count);
 
+        //Render the first map on the front in 3D.
+        RenderMap(roadMaps[(int) paretoFront[currentlySelectedMap].x]);
     }
 
-        
+    private void Update()
+    {
+        if (Input.GetButtonDown("Next"))
+        {
+            currentlySelectedMap++;
+            if (currentlySelectedMap == paretoFront.Count)
+            {
+                currentlySelectedMap = 0;
+            }
+            foreach(GameObject road in gameObjectList)
+            {
+                Destroy(road);
+            }
+            RenderMap(roadMaps[(int)paretoFront[currentlySelectedMap].x]);
+        }
+    }
 }
