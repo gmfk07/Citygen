@@ -731,7 +731,7 @@ public class RoadSpawner : MonoBehaviour
         {
             // TODO: establish bounds
             // We should probably use constants for min max bounds size or something?
-            float totalWeightedDistance = sumWeightedDistanceToRoads(-10000, -10000, 10000, 10000, 1, roadMaps[roadMapIdx]);
+            float totalWeightedDistance = sumWeightedDistanceToRoads(-5000, 5000, -5000, 5000, 100, roadMaps[roadMapIdx]);
             float totalRoadLength = sumSegmentLength(roadMaps[roadMapIdx]);
 
             performanceSpacePoints.Add(new Vector3(roadMapIdx, totalWeightedDistance, totalRoadLength));
