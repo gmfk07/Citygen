@@ -13,15 +13,15 @@ public class RoadSpawner : MonoBehaviour
     public static float HIGHWAY_POPULATION_SAMPLE_SIZE = 1;
     public static float BRANCH_ANGLE_DEVIATION_FROM_90 = 3;
     public static float STRAIGHT_ANGLE_DEVIATION_FROM_0 = 30;
-    public static float HIGHWAY_BRANCH_POPULATION_THRESHOLD = 0.1f;
+    public static float HIGHWAY_BRANCH_POPULATION_THRESHOLD = 0.07f;
     public static float NORMAL_BRANCH_POPULATION_THRESHOLD = 0.01f;
-    public static float HIGHWAY_BRANCH_PROBABILITY = 0.1f;
-    public static float DEFAULT_BRANCH_PROBABILITY = 0.4f;
+    public static float HIGHWAY_BRANCH_PROBABILITY = 0.2f;
+    public static float DEFAULT_BRANCH_PROBABILITY = 0.6f;
     public static int NORMAL_BRANCH_TIME_DELAY_FROM_HIGHWAY = 10;
-    public static float HIGHWAY_SEGMENT_LENGTH = 400;
-    public static float DEFAULT_SEGMENT_LENGTH = 300;
-    public static int SEGMENT_COUNT_LIMIT = 200;
-    public static int ITERATION_COUNT = 50;
+    public static float HIGHWAY_SEGMENT_LENGTH = 300;
+    public static float DEFAULT_SEGMENT_LENGTH = 200;
+    public static int SEGMENT_COUNT_LIMIT = 400;
+    public static int ITERATION_COUNT = 70;
 
     private int currentlySelectedMap = 0;
     private List<Vector3> paretoFront;
@@ -701,7 +701,7 @@ public class RoadSpawner : MonoBehaviour
             road.transform.rotation = Quaternion.LookRotation(segment.end - (segment.start + segment.end) / 2);
 
             // Create a cube that represents a building.
-            GameObject cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            /*GameObject cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
             gameObjectList.Add(cube);
             // Attempt to scoot the building off the road...
             // TODO: choose a side of the road to scoot it onto?
@@ -711,7 +711,7 @@ public class RoadSpawner : MonoBehaviour
             // Size the building based on density?
             float density = this.popOnRoad(segment);
             float height = 1250.0f * density;
-            cube.transform.localScale = new Vector3(200.0f, height, 250.0f);
+            cube.transform.localScale = new Vector3(200.0f, height, 250.0f);*/
         }
     }
 
