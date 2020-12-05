@@ -20,12 +20,14 @@ public class RoadSpawner : MonoBehaviour
     public static int NORMAL_BRANCH_TIME_DELAY_FROM_HIGHWAY = 10;
     public static float HIGHWAY_SEGMENT_LENGTH = 300;
     public static float DEFAULT_SEGMENT_LENGTH = 200;
-    public static int SEGMENT_COUNT_LIMIT = 400;
-    public static int ITERATION_COUNT = 70;
+    public static int SEGMENT_COUNT_LIMIT = 300;
+    public static int ITERATION_COUNT = 60;
+    public static float PERLIN_NOISE_SCALING = 3000;
 
     private int currentlySelectedMap = 0;
     private List<Vector3> paretoFront;
     private List<GameObject> gameObjectList = new List<GameObject>();
+    private List<GameObject> populationVisualizerList = new List<GameObject>();
     private List<List<Segment>> roadMaps;
 
     // Taken from https://answers.unity.com/questions/421968/normal-distribution-random.html.
@@ -183,7 +185,7 @@ public class RoadSpawner : MonoBehaviour
     }
 
     public float populationAt(float x, float y) {
-        return Mathf.PerlinNoise(x, y);
+        return Mathf.PerlinNoise(x/ PERLIN_NOISE_SCALING, y/ PERLIN_NOISE_SCALING);
     }
 
     // Taken from Unity Community Wiki of 3D Math Functions
@@ -213,21 +215,17 @@ public class RoadSpawner : MonoBehaviour
 
     public static Vector3 closestPointOnSegment(Vector3 point, Segment segment)
     {
-        //Debug.Log("compute closest point on segment for segment " + segment.start + " " + segment.end + ", point = " + point);
         Vector3 segmentVector = segment.end - segment.start;
         Vector3 translatedPoint = point - segment.start;
         Vector3 projection = Vector3.Project(segmentVector, translatedPoint);
         if (pointWithinSegment(segment, point))
         {
-            //Debug.Log("closest point is projection = " + projection);
             return projection;
         }
         if ((segment.start - point).magnitude < (segment.end - point).magnitude)
         {
-            //Debug.Log("segment start is closer than segment end");
             return segment.start;
         }
-        //Debug.Log("segment end is closer than segment start");
         return segment.end;
     }
 
@@ -251,7 +249,6 @@ public class RoadSpawner : MonoBehaviour
 
     bool localConstraints(Segment segment, ref List<Segment> segments)
     {
-        Debug.Log("local constraints");
         // Intersection check.
 
         // Find the minimum distance for intersections.
@@ -303,7 +300,6 @@ public class RoadSpawner : MonoBehaviour
                     {
                         return false;
                     }
-                    Debug.Log("found intersection at " + intersection);
                     other.split(intersection, segment, ref segments);
                     segment.end = intersection;
                     segment.isSevered = true;
@@ -340,10 +336,9 @@ public class RoadSpawner : MonoBehaviour
                     {
                         return false;
                     }
-                    Debug.Log("modifying segment from " + segment.start + " " + segment.end + " " + segment.length());
                     Vector3 point = other.end;
                     segment.end = point;
-                    Debug.Log("to " + segment.start + " " + segment.end + " " + segment.length());
+
                     segment.isSevered = true;
                     foreach (Segment seg in other.links[1])
                     {
@@ -380,7 +375,6 @@ public class RoadSpawner : MonoBehaviour
                 if ((segment.end - closestPoint).magnitude == minDistance)
                 {
 
-                    Debug.Log("road snap distance");
                     segment.end = closestPoint;
                     segment.isSevered = true;
                     // if intersecting lines are too closely aligned don't continue
@@ -401,7 +395,6 @@ public class RoadSpawner : MonoBehaviour
 
     List<Segment> globalGoals(Segment previousSegment)
     {
-        Debug.Log("global goals");
         List<Segment> newBranches = new List<Segment>();
         if (!previousSegment.isSevered)
         {
@@ -432,7 +425,7 @@ public class RoadSpawner : MonoBehaviour
                         maxPop = curPop;
                     }
                 }
-                Debug.Log("adding segment " + bestSegment.start + ", " + bestSegment.end);
+
                 newBranches.Add(bestSegment);
                 if (maxPop > HIGHWAY_BRANCH_POPULATION_THRESHOLD)
                 {
@@ -461,14 +454,12 @@ public class RoadSpawner : MonoBehaviour
             }
             else if (straightPop > NORMAL_BRANCH_POPULATION_THRESHOLD)
             {
-                Debug.Log("normal road goes straight");
                 newBranches.Add(continueStraight);
             }
             if (straightPop > NORMAL_BRANCH_POPULATION_THRESHOLD)
             {
                 if (new System.Random().NextDouble() < DEFAULT_BRANCH_PROBABILITY)
                 {
-                    Debug.Log("normal road branches left");
                     newBranches.Add(Segment.usingDirection(
                         previousSegment.end,
                         Quaternion.AngleAxis(-90 + RandomBranchAngleDeviation(), Vector3.up) * previousSegment.dir(),
@@ -480,7 +471,6 @@ public class RoadSpawner : MonoBehaviour
                 {
                     if (new System.Random().NextDouble() < DEFAULT_BRANCH_PROBABILITY)
                     {
-                        Debug.Log("normal road branches right");
                         newBranches.Add(Segment.usingDirection(
                                 previousSegment.end,
                                 Quaternion.AngleAxis(90 + RandomBranchAngleDeviation(), Vector3.up) * previousSegment.dir(),
@@ -504,11 +494,7 @@ public class RoadSpawner : MonoBehaviour
                 branch.links[0].Add(previousSegment);
             };
         }
-        Debug.Log("generated new branches = ");
-        foreach (Segment branch in newBranches)
-        {
-            Debug.Log(branch.start + " " + branch.end + " " + branch.length());
-        }
+
         return newBranches;
     }
 
@@ -558,23 +544,13 @@ public class RoadSpawner : MonoBehaviour
 
     void generationStep(ref PriorityQueue<Segment> pq, ref List<Segment> segments)
     {
-        Debug.Log("call generationStep");
         Segment minSegment = pq.dequeue();
-        Debug.Log("minSegment = " + minSegment.start + " " + minSegment.end + " " + minSegment.length());
         bool accepted = localConstraints(minSegment, ref segments);
-        Debug.Log("minSegment after localConstraints = " + minSegment.start + " " + minSegment.end + " " + minSegment.length());
-        //Debug.Log("accepted? = " + accepted);
         if (accepted)
         {
             minSegment.setupBranchLinks();
-            //Debug.Log("minSegment after setupBranchLinks = " + minSegment.start + " " + minSegment.end);
             segments.Add(minSegment);
 
-            //Debug.Log("segments after addition of minSegment =");
-            //foreach (Segment s in segments)
-            //{
-            //    Debug.Log(s.start + " " + s.end);
-            //}
             foreach (Segment newSegment in globalGoals(minSegment))
             {
                 newSegment.t = minSegment.t + 1 + newSegment.t;
@@ -592,36 +568,16 @@ public class RoadSpawner : MonoBehaviour
             PriorityQueue<Segment> pq = new PriorityQueue<Segment>(s => s.t);
             List<Segment> segments = new List<Segment>();
 
-            Debug.Log("initialized pq and segments");
-
             foreach (Segment initialSegment in makeInitialSegments())
             {
                 pq.enqueue(initialSegment);
             }
 
-            Debug.Log("added initial segments to pq");
-
             while (!pq.isEmpty() && segments.Count < SEGMENT_COUNT_LIMIT)
             {
                 generationStep(ref pq, ref segments);
-                //Debug.Log("new iteration of generation step, segments = ");
-                //foreach (Segment s in segments)
-                //{
-                //    Debug.Log(s.start + " " + s.end + " " + s.length());
-                //}
             }
 
-            if (pq.isEmpty())
-            {
-                Debug.Log("pq is empty");
-            }
-
-            Debug.Log("segment generation done, segments =");
-            
-            if (segments.Count >= SEGMENT_COUNT_LIMIT)
-            {
-                Debug.Log("segment count limit reached, segments.Count = " + segments.Count);
-            }
             roadMaps.Add(segments);
         }
         return roadMaps;
@@ -646,10 +602,25 @@ public class RoadSpawner : MonoBehaviour
                         minDist = dist;
                     }
                 }
-                total += Mathf.PerlinNoise(x, z) * minDist;
+                total += Mathf.PerlinNoise(x/ PERLIN_NOISE_SCALING, z/ PERLIN_NOISE_SCALING) * minDist;
             }
         }
         return total;
+    }
+
+    void createPopulationVisualizer(float minX, float maxX, float minZ, float maxZ, float sampleDistance)
+    {
+        for (float x = minX; x < maxX; x += sampleDistance)
+        {
+            for (float z = minZ; z < maxZ; z += sampleDistance)
+            {
+                GameObject sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                sphere.transform.position = new Vector3(x, 0, z);
+                sphere.transform.localScale = new Vector3(Mathf.PerlinNoise(x/PERLIN_NOISE_SCALING, z/ PERLIN_NOISE_SCALING) * 100, Mathf.PerlinNoise(x/ PERLIN_NOISE_SCALING, z/ PERLIN_NOISE_SCALING) * 100, Mathf.PerlinNoise(x/ PERLIN_NOISE_SCALING, z/ PERLIN_NOISE_SCALING) * 100);
+                populationVisualizerList.Add(sphere);
+                sphere.SetActive(false);
+            }
+        }
     }
 
     float sumSegmentLength(List<Segment> segments)
@@ -687,8 +658,6 @@ public class RoadSpawner : MonoBehaviour
     {
         foreach (Segment segment in roadMap)
         {
-            Debug.Log(segment.start + " " + segment.end + " " + segment.length());
-
             GameObject road = Instantiate(
                 RoadObject, Vector3.zero, Quaternion.identity);
 
@@ -718,14 +687,14 @@ public class RoadSpawner : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        Debug.Log("start");
-
         // Set a random seed for determinism in debugging etc.
         UnityEngine.Random.InitState(420);
 
         roadMaps = getRoadMaps();
 
         List<Vector3> performanceSpacePoints = new List<Vector3>();
+
+        createPopulationVisualizer(-5000, 5000, -5000, 5000, 100);
 
         for (int roadMapIdx = 0; roadMapIdx < roadMaps.Count; roadMapIdx++)
         {
@@ -738,8 +707,6 @@ public class RoadSpawner : MonoBehaviour
         }
 
         paretoFront = getParetoFront(performanceSpacePoints);
-
-        Debug.Log(roadMaps[(int)paretoFront[currentlySelectedMap].x].Count);
 
         //Render the first map on the front in 3D.
         RenderMap(roadMaps[(int) paretoFront[currentlySelectedMap].x]);
@@ -759,6 +726,13 @@ public class RoadSpawner : MonoBehaviour
                 Destroy(road);
             }
             RenderMap(roadMaps[(int)paretoFront[currentlySelectedMap].x]);
+        }
+        if (Input.GetButtonDown("Toggle"))
+        {
+            foreach(GameObject sphere in populationVisualizerList)
+            {
+                sphere.SetActive(!sphere.activeSelf);
+            }
         }
     }
 }
