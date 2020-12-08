@@ -24,6 +24,8 @@ public class RoadSpawner : MonoBehaviour
     public static int ITERATION_COUNT = 500;
     public static float PERLIN_NOISE_SCALING = 4000;
     public static float PERLIN_OFFSET = -463;
+    public static int SAMPLE_SIZE = 500;
+    public static int POPULATION_EXPONENT = 1;
 
     private int currentlySelectedMap = 0;
     private List<Vector3> paretoFront;
@@ -607,7 +609,7 @@ public class RoadSpawner : MonoBehaviour
                         minDist = dist;
                     }
                 }
-                total += Mathf.Pow(Mathf.PerlinNoise(x/ PERLIN_NOISE_SCALING + PERLIN_OFFSET, z/ PERLIN_NOISE_SCALING + PERLIN_OFFSET), 4) * minDist;
+                total += Mathf.Pow(Mathf.PerlinNoise(x/ PERLIN_NOISE_SCALING + PERLIN_OFFSET, z/ PERLIN_NOISE_SCALING + PERLIN_OFFSET), POPULATION_EXPONENT) * minDist;
             }
         }
         return total;
@@ -705,7 +707,7 @@ public class RoadSpawner : MonoBehaviour
         {
             // TODO: establish bounds
             // We should probably use constants for min max bounds size or something?
-            float totalWeightedDistance = sumWeightedDistanceToRoads(-5000, 5000, -5000, 5000, 500, roadMaps[roadMapIdx]);
+            float totalWeightedDistance = sumWeightedDistanceToRoads(-5000, 5000, -5000, 5000, SAMPLE_SIZE, roadMaps[roadMapIdx]);
             float totalRoadLength = sumSegmentLength(roadMaps[roadMapIdx]);
 
             performanceSpacePoints.Add(new Vector3(roadMapIdx, totalWeightedDistance, totalRoadLength));
