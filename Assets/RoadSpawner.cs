@@ -13,16 +13,17 @@ public class RoadSpawner : MonoBehaviour
     public static float HIGHWAY_POPULATION_SAMPLE_SIZE = 1;
     public static float BRANCH_ANGLE_DEVIATION_FROM_90 = 3;
     public static float STRAIGHT_ANGLE_DEVIATION_FROM_0 = 30;
-    public static float HIGHWAY_BRANCH_POPULATION_THRESHOLD = 0.07f;
-    public static float NORMAL_BRANCH_POPULATION_THRESHOLD = 0.01f;
-    public static float HIGHWAY_BRANCH_PROBABILITY = 0.2f;
-    public static float DEFAULT_BRANCH_PROBABILITY = 0.6f;
-    public static int NORMAL_BRANCH_TIME_DELAY_FROM_HIGHWAY = 10;
+    public static float HIGHWAY_BRANCH_POPULATION_THRESHOLD = 0.5f;
+    public static float NORMAL_BRANCH_POPULATION_THRESHOLD = 0.2f;
+    public static float HIGHWAY_BRANCH_PROBABILITY = 0.5f;
+    public static float DEFAULT_BRANCH_PROBABILITY = 0.75f;
+    public static int NORMAL_BRANCH_TIME_DELAY_FROM_HIGHWAY = 8;
     public static float HIGHWAY_SEGMENT_LENGTH = 300;
     public static float DEFAULT_SEGMENT_LENGTH = 200;
     public static int SEGMENT_COUNT_LIMIT = 300;
-    public static int ITERATION_COUNT = 60;
-    public static float PERLIN_NOISE_SCALING = 3000;
+    public static int ITERATION_COUNT = 500;
+    public static float PERLIN_NOISE_SCALING = 4000;
+    public static float PERLIN_OFFSET = -463;
 
     private int currentlySelectedMap = 0;
     private List<Vector3> paretoFront;
@@ -185,7 +186,7 @@ public class RoadSpawner : MonoBehaviour
     }
 
     public float populationAt(float x, float y) {
-        return Mathf.PerlinNoise(x/ PERLIN_NOISE_SCALING, y/ PERLIN_NOISE_SCALING);
+        return Mathf.PerlinNoise(x/ PERLIN_NOISE_SCALING + PERLIN_OFFSET, y/ PERLIN_NOISE_SCALING + PERLIN_OFFSET);
     }
 
     // Taken from Unity Community Wiki of 3D Math Functions
@@ -576,6 +577,10 @@ public class RoadSpawner : MonoBehaviour
             while (!pq.isEmpty() && segments.Count < SEGMENT_COUNT_LIMIT)
             {
                 generationStep(ref pq, ref segments);
+                if (segments.Count == SEGMENT_COUNT_LIMIT - 1)
+                {
+                    Debug.Log("reached segment count limit!");
+                }
             }
 
             roadMaps.Add(segments);
@@ -602,7 +607,7 @@ public class RoadSpawner : MonoBehaviour
                         minDist = dist;
                     }
                 }
-                total += Mathf.PerlinNoise(x/ PERLIN_NOISE_SCALING, z/ PERLIN_NOISE_SCALING) * minDist;
+                total += Mathf.Pow(Mathf.PerlinNoise(x/ PERLIN_NOISE_SCALING + PERLIN_OFFSET, z/ PERLIN_NOISE_SCALING + PERLIN_OFFSET), 4) * minDist;
             }
         }
         return total;
@@ -616,7 +621,7 @@ public class RoadSpawner : MonoBehaviour
             {
                 GameObject sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                 sphere.transform.position = new Vector3(x, 0, z);
-                sphere.transform.localScale = new Vector3(Mathf.PerlinNoise(x/PERLIN_NOISE_SCALING, z/ PERLIN_NOISE_SCALING) * 100, Mathf.PerlinNoise(x/ PERLIN_NOISE_SCALING, z/ PERLIN_NOISE_SCALING) * 100, Mathf.PerlinNoise(x/ PERLIN_NOISE_SCALING, z/ PERLIN_NOISE_SCALING) * 100);
+                sphere.transform.localScale = new Vector3(Mathf.PerlinNoise(x/PERLIN_NOISE_SCALING + PERLIN_OFFSET, z/ PERLIN_NOISE_SCALING + PERLIN_OFFSET) * 100, Mathf.PerlinNoise(x/ PERLIN_NOISE_SCALING + PERLIN_OFFSET, z/ PERLIN_NOISE_SCALING + PERLIN_OFFSET) * 100, Mathf.PerlinNoise(x/ PERLIN_NOISE_SCALING + PERLIN_OFFSET, z/ PERLIN_NOISE_SCALING + PERLIN_OFFSET) * 100);
                 populationVisualizerList.Add(sphere);
                 sphere.SetActive(false);
             }
@@ -700,7 +705,7 @@ public class RoadSpawner : MonoBehaviour
         {
             // TODO: establish bounds
             // We should probably use constants for min max bounds size or something?
-            float totalWeightedDistance = sumWeightedDistanceToRoads(-5000, 5000, -5000, 5000, 100, roadMaps[roadMapIdx]);
+            float totalWeightedDistance = sumWeightedDistanceToRoads(-5000, 5000, -5000, 5000, 500, roadMaps[roadMapIdx]);
             float totalRoadLength = sumSegmentLength(roadMaps[roadMapIdx]);
 
             performanceSpacePoints.Add(new Vector3(roadMapIdx, totalWeightedDistance, totalRoadLength));
@@ -710,6 +715,7 @@ public class RoadSpawner : MonoBehaviour
 
         //Render the first map on the front in 3D.
         RenderMap(roadMaps[(int) paretoFront[currentlySelectedMap].x]);
+        Debug.Log(paretoFront[currentlySelectedMap]);
     }
 
     private void Update()
@@ -726,6 +732,7 @@ public class RoadSpawner : MonoBehaviour
                 Destroy(road);
             }
             RenderMap(roadMaps[(int)paretoFront[currentlySelectedMap].x]);
+            Debug.Log(paretoFront[currentlySelectedMap]);
         }
         if (Input.GetButtonDown("Toggle"))
         {
